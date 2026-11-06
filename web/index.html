@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CCTP V1 Status</title>
+  <meta name="description" content="Live CCTP V1 limits and route health for Noble ⇄ Ethereum, read on-chain from your browser." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="wrap">
+    <div class="title-row">
+      <h1>CCTP V1 Status <span class="muted">Noble ⇄ Ethereum</span></h1>
+      <div class="updated" id="updated" aria-live="polite">Reading chain…</div>
+    </div>
+    <p class="disclaimer">
+      <strong>Informational only.</strong> Limits are set by Circle and can change at any time.
+      Always do a small test transfer first. This page is read-only: your browser reads the chain directly, and nothing is ever signed or sent.
+    </p>
+  </header>
+
+  <main class="wrap">
+    <section aria-label="Route status" class="routes" id="routes"></section>
+    <p class="muted small" id="scheduled"></p>
+
+    <section aria-labelledby="countdown-h" class="card">
+      <h2 id="countdown-h">CCTP V1 retirement</h2>
+      <div class="countdowns" id="countdowns"></div>
+    </section>
+
+    <section aria-labelledby="calc-h" class="card">
+      <h2 id="calc-h">Transfer calculator</h2>
+      <form id="calc-form" class="calc-form">
+        <label>Direction
+          <select id="calc-direction">
+            <option value="noble-eth">Noble → Ethereum</option>
+            <option value="eth-noble">Ethereum → Noble</option>
+          </select>
+        </label>
+        <label>Amount (USDC)
+          <input id="calc-amount" inputmode="decimal" autocomplete="off" value="2,000,000" />
+        </label>
+        <button type="submit">Calculate</button>
+      </form>
+      <div id="calc-result" aria-live="polite"></div>
+    </section>
+
+    <section aria-labelledby="burns-h" class="card">
+      <h2 id="burns-h">USDC burned on Noble per day</h2>
+      <p class="muted small" id="burns-meta"></p>
+      <div class="calc-summary" id="burns-stats"></div>
+      <figure class="chart-fig">
+        <figcaption>Daily burns by destination <span class="muted">(UTC days, CCTP V1 DepositForBurn)</span></figcaption>
+        <div class="legend" id="legend-burns"></div>
+        <div class="chart-box"><canvas id="chart-burns" aria-label="USDC burned on Noble per day" role="img"></canvas></div>
+      </figure>
+      <details class="table-view">
+        <summary>Show daily totals by destination</summary>
+        <div class="scroll"><table id="burns-table"></table></div>
+      </details>
+      <h3 class="subhead">Recent burns</h3>
+      <p class="muted small">Context only: burns still going through does not guarantee your transfer fits the current limits.</p>
+      <div class="scroll"><table id="activity"></table></div>
+    </section>
+
+    <section aria-labelledby="hist-h" class="card">
+      <div class="section-head">
+        <h2 id="hist-h">Limit history</h2>
+        <div class="seg" role="group" aria-label="Time range" id="range">
+          <button type="button" data-hours="24">24h</button>
+          <button type="button" data-hours="72" aria-pressed="true">72h</button>
+          <button type="button" data-hours="168">7d</button>
+          <button type="button" data-hours="720">30d</button>
+        </div>
+      </div>
+      <p class="muted small" id="hist-meta"></p>
+      <div class="charts">
+        <figure class="chart-fig">
+          <figcaption>Per-message burn limit <span class="muted">(max per transaction)</span></figcaption>
+          <div class="legend" id="legend-limits"></div>
+          <div class="chart-box"><canvas id="chart-limits" aria-label="Per-message burn limit over time" role="img"></canvas></div>
+          <div class="changes" id="changes-limits"></div>
+        </figure>
+        <figure class="chart-fig">
+          <figcaption>Destination minter allowance <span class="muted">(shared cap, all users)</span></figcaption>
+          <div class="legend" id="legend-allow"></div>
+          <div class="chart-box"><canvas id="chart-allow" aria-label="Destination minter allowance over time" role="img"></canvas></div>
+          <div class="changes" id="changes-allow"></div>
+        </figure>
+      </div>
+      <details class="table-view">
+        <summary>Show history as a table</summary>
+        <div class="scroll"><table id="hist-table"></table></div>
+      </details>
+    </section>
+
+    <section aria-labelledby="checks-h" class="card">
+      <h2 id="checks-h">All checks</h2>
+      <p class="muted small">Read live by your browser. Click a source to verify it yourself.</p>
+      <div class="scroll"><table class="checks" id="checks"></table></div>
+    </section>
+  </main>
+
+  <footer class="wrap sources">
+    <h2>Data sources</h2>
+    <ul>
+      <li>Ethereum contracts (CCTP V1): <a href="https://developers.circle.com/cctp/v1/evm-smart-contracts" target="_blank" rel="noopener">Circle docs</a>,
+        ABIs in <a href="https://github.com/circlefin/evm-cctp-contracts/tree/master/docs/abis/cctp" target="_blank" rel="noopener">circlefin/evm-cctp-contracts</a>.
+        <a href="https://etherscan.io/address/0xBd3fa81B58Ba92a82136038B25aDec7066af3155#readContract" target="_blank" rel="noopener">TokenMessenger</a> ·
+        <a href="https://etherscan.io/address/0x0a992d191DEeC32aFe36203Ad87D7d289a738F81#readContract" target="_blank" rel="noopener">MessageTransmitter</a> ·
+        <a href="https://etherscan.io/address/0xc4922d64a24675E16e1586e3e3Aa56C06fABe907#readContract" target="_blank" rel="noopener">TokenMinter</a> ·
+        <a href="https://etherscan.io/address/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48#readProxyContract" target="_blank" rel="noopener">USDC</a></li>
+      <li>Noble REST paths from the <code>query.proto</code> HTTP annotations in
+        <a href="https://github.com/circlefin/noble-cctp/blob/master/proto/circle/cctp/v1/query.proto" target="_blank" rel="noopener">circlefin/noble-cctp</a> and
+        <a href="https://github.com/circlefin/noble-fiattokenfactory/blob/master/proto/circle/fiattokenfactory/v1/query.proto" target="_blank" rel="noopener">circlefin/noble-fiattokenfactory</a>.</li>
+      <li>Published data (updated every ~15 min by a GitHub Action):
+        <a id="link-latest" target="_blank" rel="noopener">latest.json</a> ·
+        <a id="link-history" target="_blank" rel="noopener">history.json</a> ·
+        <a id="link-burns" target="_blank" rel="noopener">burns.json</a></li>
+    </ul>
+  </footer>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

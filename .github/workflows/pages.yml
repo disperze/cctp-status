@@ -1,0 +1,58 @@
+# Build the static page and deploy it to GitHub Pages on every push to the default branch.
+# Requires: Settings → Pages → Source: "GitHub Actions".
+name: Deploy page
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Build
+        env:
+          VITE_DATA_URL: https://raw.githubusercontent.com/${{ github.repository }}/data
+          # Shipped to every visitor's browser: use public, keyless endpoints only.
+          VITE_ETH_RPC_URLS: ${{ vars.ETH_RPC_URLS }}
+          VITE_NOBLE_LCD_URLS: ${{ vars.NOBLE_LCD_URLS }}
+          VITE_SAFETY_MARGIN: ${{ vars.SAFETY_MARGIN }}
+          VITE_ALLOWANCE_WARN_USDC: ${{ vars.ALLOWANCE_WARN_USDC }}
+          VITE_TREND_WINDOW_HOURS: ${{ vars.TREND_WINDOW_HOURS }}
+        run: npm run build
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

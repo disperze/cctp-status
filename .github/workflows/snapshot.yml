@@ -1,0 +1,67 @@
+# Every ~15 min: read all checks on-chain, sync Noble burns, and publish JSON to the
+# `data` branch (kept as a single force-pushed commit so the repo doesn't grow).
+# The page reads https://raw.githubusercontent.com/<owner>/<repo>/data/*.json
+name: Snapshot
+
+on:
+  schedule:
+    - cron: "*/15 * * * *" # GitHub may start scheduled runs several minutes late
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            git clone -q --depth 1 --branch data "$REMOTE" data
+          else
+            echo "No data branch yet: starting fresh"
+            mkdir data && git -C data init -q -b data && git -C data remote add origin "$REMOTE"
+          fi
+
+      - name: Snapshot + burns + publish
+        env:
+          DATA_DIR: data
+          # Secrets win over variables, so a keyed RPC URL can stay private (the Action never exposes it).
+          ETH_RPC_URLS: ${{ secrets.ETH_RPC_URLS || vars.ETH_RPC_URLS }}
+          NOBLE_LCD_URLS: ${{ secrets.NOBLE_LCD_URLS || vars.NOBLE_LCD_URLS }}
+          SAFETY_MARGIN: ${{ vars.SAFETY_MARGIN }}
+          ALLOWANCE_WARN_USDC: ${{ vars.ALLOWANCE_WARN_USDC }}
+          TREND_WINDOW_HOURS: ${{ vars.TREND_WINDOW_HOURS }}
+          BURNS_BACKFILL_DAYS: ${{ vars.BURNS_BACKFILL_DAYS }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: npm run snapshot
+
+      - name: Push data branch
+        run: |
+          cd data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan next
+          git add -A
+          git commit -q -m "snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f origin next:data
