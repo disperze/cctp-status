@@ -570,9 +570,17 @@ function recipientLink(burn: RecentBurn): Child {
   return h("span", { class: "mono", text: burn.mint_recipient });
 }
 
+const ACTIVITY_PAGE_SIZE = 10;
+let activityPage = 0;
+
 function renderActivity(items: RecentBurn[]) {
+  const pages = Math.max(1, Math.ceil(items.length / ACTIVITY_PAGE_SIZE));
+  activityPage = Math.min(activityPage, pages - 1);
+  const start = activityPage * ACTIVITY_PAGE_SIZE;
+  const pageItems = items.slice(start, start + ACTIVITY_PAGE_SIZE);
+
   const head = h("tr", {}, ["Time", "Destination", "Amount (USDC)", "Recipient", "Noble tx"].map((t, i) => h("th", { class: i === 2 ? "num" : "", text: t })));
-  const rows = items.map((b) =>
+  const rows = pageItems.map((b) =>
     h("tr", {},
       h("td", { title: b.time, text: `${fmtTime(b.time)} (${ago(b.time)})` }),
       h("td", { text: domainName(b.destination_domain) }),
@@ -580,6 +588,23 @@ function renderActivity(items: RecentBurn[]) {
       h("td", {}, recipientLink(b)),
       h("td", {}, h("a", { class: "mono", href: b.explorer_url, target: "_blank", rel: "noopener", text: b.txhash.slice(0, 10) + "…" }))));
   $("activity").replaceChildren(h("thead", {}, head), h("tbody", {}, rows.length ? rows : [h("tr", {}, h("td", { colspan: "5", class: "muted", text: "No burns recorded yet." }))]));
+
+  const pager = $("activity-pager");
+  if (pages <= 1) {
+    pager.hidden = true;
+    pager.replaceChildren();
+    return;
+  }
+  const go = (delta: number) => () => { activityPage += delta; renderActivity(items); };
+  const prev = h("button", { type: "button", disabled: activityPage === 0, "aria-label": "Newer burns", text: "‹ Newer" });
+  const next = h("button", { type: "button", disabled: activityPage >= pages - 1, "aria-label": "Older burns", text: "Older ›" });
+  prev.addEventListener("click", go(-1));
+  next.addEventListener("click", go(1));
+  pager.hidden = false;
+  pager.replaceChildren(
+    prev,
+    h("span", { class: "muted small", "aria-live": "polite", text: `${start + 1}–${start + pageItems.length} of ${items.length} · page ${activityPage + 1}/${pages}` }),
+    next);
 }
 
 // ---------------------------------------------------------------- loops

@@ -135,6 +135,11 @@ button { cursor: pointer; background: var(--ink); color: var(--surface); border-
 .seg button { background: transparent; color: var(--ink-2); border: 0; border-radius: 0; min-height: 32px; padding: 4px 12px; font-weight: 500; }
 .seg button + button { border-left: 1px solid var(--axis); }
 .seg button[aria-pressed="true"] { background: var(--wash); color: var(--ink); font-weight: 700; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.pager[hidden] { display: none; }
+.pager button { background: transparent; color: var(--ink); border-color: var(--axis); min-height: 32px; padding: 4px 12px; font-weight: 500; }
+.pager button:disabled { opacity: 0.4; cursor: default; }
+.pager span { font-variant-numeric: tabular-nums; text-align: center; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 .chart-fig { margin: 0; min-width: 0; }
 .chart-fig figcaption { font-weight: 600; font-size: 0.92rem; }
