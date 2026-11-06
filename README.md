@@ -58,6 +58,7 @@ Optional, under **Settings → Secrets and variables → Actions**:
 | `ETH_RPC_URLS`, `NOBLE_LCD_URLS` | Secret | Snapshot Action only (overrides the variable). Use this for keyed RPC URLs. |
 | `SAFETY_MARGIN`, `ALLOWANCE_WARN_USDC`, `TREND_WINDOW_HOURS` | Variable | Both |
 | `BURNS_BACKFILL_DAYS` | Variable | Snapshot Action |
+| `OSMOSIS_LCD_URLS` | Variable | Page build only (calculator pool read). Public keyless URLs only. |
 | `ALERT_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Secret | Alerts on limit changes and route flips |
 
 Changing a Variable used by the page requires re-running **Deploy page**.
@@ -102,8 +103,18 @@ Node 20.19+ (Vite 8). `.env` is loaded automatically by the Node scripts; see [.
   - Precedence: `PAUSED > BLOCKED > UNKNOWN > DEGRADED > OPEN`.
 - **Max per transaction**: A1 (Noble → Eth) / B1 (Eth → Noble).
 - **Max total right now**: the destination minter allowance, A5 / B2. This is an aggregate cap shared by everyone, not reserved for you.
-- **Transfer calculator**: `safe_chunk = floor(limit × SAFETY_MARGIN)`, `messages = ceil(amount / safe_chunk)`.
-  It shows every chunk and whether the amount fits the destination allowance.
+- **Transfer calculator**: the goal is to **exit Noble USDC** before Circle deprecates it, into Circle-native USDC.
+  For Noble → out it shows two exits, the recommended one first:
+  1. **USDC.inj via Osmosis allUSDC pool 3497 and [Skip Go](https://go.skip.build)** (preferred). Noble → Osmosis →
+     swap USDC.n → USDC.inj 1:1 → Injective, as one Skip Go transaction that doesn't use Noble CCTP V1 or its limits.
+     Recommended when `amount ≤ floor(pool USDC.inj balance × SAFETY_MARGIN)`, the pool is active and USDC.n isn't
+     corrupted. Liquidity check only: no Skip quote is requested.
+  2. **Ethereum USDC via CCTP V1** (fallback): `safe_chunk = floor(limit × SAFETY_MARGIN)`,
+     `messages = ceil(amount / safe_chunk)`, with every chunk and whether the amount fits the destination allowance.
+
+  If the pool can't be read, its reading is stale, or it doesn't hold enough USDC.inj, CCTP V1 is recommended. When the
+  pool holds some but not all of the amount, the page shows how much could still exit through it.
+  Ethereum → Noble moves funds *into* Noble USDC, so it shows CCTP V1 only.
 - **Countdowns** to the retirement dates above.
 - **USDC burned on Noble per day**: stacked daily bars (Ethereum vs. other V1 destinations), today and 7-day totals,
   a per-destination table, and the 25 most recent burns.
@@ -152,6 +163,27 @@ Try any of them against a public LCD, e.g. `https://noble-api.polkachu.com<path>
 | C | Recent burns to Ethereum | `GET /cosmos/tx/v1beta1/txs?query=circle.cctp.v1.DepositForBurn.destination_domain=0&order_by=ORDER_BY_DESC` | typed event [`circle.cctp.v1.DepositForBurn`](https://github.com/circlefin/noble-cctp/blob/master/proto/circle/cctp/v1/events.proto) | n/a (context only) |
 
 The CCTP module address is discovered at runtime, not hardcoded. On 2026-11-06 it was `noble12l2w4ugfz4m6dd73yysz477jszqnfughxvkss5`.
+
+### Osmosis allUSDC pool 3497 (calculator only)
+
+Read live by the browser from the [transmuter](https://github.com/osmosis-labs/transmuter) contract
+`osmo147h5x9pcj7lm0cttlaefx6sqq5vdfnmwfcqxkmjd7exqm9gc7grqhr75m0` via CosmWasm smart queries
+(`GET /cosmwasm/wasm/v1/contract/{contract}/smart/{base64(msg)}`). All three come from the same endpoint:
+
+| Query | Used for |
+|---|---|
+| `{"get_total_pool_liquidity":{}}` | USDC.inj balance = the most one exit swap can take |
+| `{"is_active":{}}` | `false` → swaps disabled, route unavailable |
+| `{"get_corrupted_denoms":{}}` | A corrupted USDC.n can't be swapped in |
+
+| Member | Denom on Osmosis | Origin |
+|---|---|---|
+| USDC.n | `ibc/498A0751…6BA6E4` | Noble `uusdc`, `transfer/channel-750` |
+| USDC.inj | `ibc/794C7D7F…476138` | Circle-native USDC on Injective `erc20:0xa00C59fF5a080D2b954d0c75e46E22a0c371235a`, `transfer/channel-122` |
+| axlUSDC | `ibc/D189335C…F1D858` | Axelar (not used; near-empty on 2026-11-06) |
+
+`npm run verify` checks the pool → contract mapping, the `allUSDC` subdenom, both denom traces, and that every
+member's `normalization_factor` is 1 (1:1 swaps). `lcd.osmosis.zone` is not a default: it answers 403 to smart queries.
 
 ### Which checks apply to which route
 
@@ -241,6 +273,7 @@ See [.env.example](.env.example).
 |---|---|---|
 | `ETH_RPC_URLS` | publicnode, drpc, 1rpc | Comma-separated, tried in order |
 | `NOBLE_LCD_URLS` | polkachu, api.noble.xyz, cosmos.directory | Comma-separated, tried in order |
+| `OSMOSIS_LCD_URLS` | polkachu, publicnode, cosmos.directory | Pool 3497 liquidity for the calculator; must allow CosmWasm smart queries |
 | `SAFETY_MARGIN` | `0.998` | Exact decimal in (0, 1] |
 | `ALLOWANCE_WARN_USDC` | `5000000` | Allowance below this → DEGRADED |
 | `TREND_WINDOW_HOURS` | `24` | Window for the "limit trending down" rule |
@@ -252,7 +285,7 @@ See [.env.example](.env.example).
 | `ALERT_WEBHOOK_URL` | — | Discord/Slack-compatible webhook on limit changes or route flips |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | — | Telegram alerts |
 | `VITE_DATA_URL` | `data` (dev: served from `DATA_DIR`) | Where the page loads JSON; set by the Pages workflow |
-| `VITE_ETH_RPC_URLS`, `VITE_NOBLE_LCD_URLS`, `VITE_POLL_SEC` | defaults above, `60` | Browser-side endpoints and poll interval |
+| `VITE_ETH_RPC_URLS`, `VITE_NOBLE_LCD_URLS`, `VITE_OSMOSIS_LCD_URLS`, `VITE_POLL_SEC` | defaults above, `60` | Browser-side endpoints and poll interval |
 
 ## Resilience
 
@@ -277,7 +310,9 @@ src/                 shared TypeScript (runs in Node and in the browser unless n
   ethereum.ts        viem multicall checks A5–A10, B1
   aggregate.ts       route status rules
   status.ts          status composition (shared by Action and browser)
-  calc.ts            transfer calculator
+  calc.ts            transfer calculator (CCTP chunking)
+  osmosis.ts         Osmosis allUSDC pool 3497 liquidity read
+  routes.ts          calculator exits: USDC.inj via Osmosis (preferred) vs CCTP V1
   history.ts         chart series, last-changed/delta, change detection
   burns.ts           incremental daily burn sync
   storage.ts         JSONL / SQLite snapshot store          (Node)

@@ -4,15 +4,16 @@
 // All API strings are inserted with textContent (never innerHTML). Amount math is bigint.
 import Chart from "chart.js/auto";
 import type { BurnsFile } from "../src/burns";
-import { calculate } from "../src/calc";
-import { domainName, ETH, loadConfig } from "../src/config";
+import { domainName, ETH, loadConfig, OSMOSIS } from "../src/config";
 import { fetchEthereumChecks } from "../src/ethereum";
 import { changeInfo, chartSeries, type SeriesPoint } from "../src/history";
 import { fetchNobleChecks, type RecentBurn } from "../src/noble";
+import { fetchAlloyedPool, type AlloyedPoolState } from "../src/osmosis";
 import type { HistoryFile } from "../src/publish";
+import { planRoutes, skipGoUrl, type OsmosisOption, type OsmosisStatus, type RouteOptionId, type RoutePlan } from "../src/routes";
 import { composeStatus, trendFromRecords } from "../src/status";
 import type { SnapshotRecord } from "../src/storage";
-import type { CheckId, CheckResult, StatusSnapshot } from "../src/types";
+import type { CheckId, CheckResult, Direction, StatusSnapshot } from "../src/types";
 import { formatUsdc, parseUsdc } from "../src/units";
 
 const env = import.meta.env;
@@ -20,6 +21,7 @@ const POLL_SEC = Number(env.VITE_POLL_SEC || 60);
 const cfg = loadConfig({
   ETH_RPC_URLS: env.VITE_ETH_RPC_URLS,
   NOBLE_LCD_URLS: env.VITE_NOBLE_LCD_URLS,
+  OSMOSIS_LCD_URLS: env.VITE_OSMOSIS_LCD_URLS,
   SAFETY_MARGIN: env.VITE_SAFETY_MARGIN,
   ALLOWANCE_WARN_USDC: env.VITE_ALLOWANCE_WARN_USDC,
   TREND_WINDOW_HOURS: env.VITE_TREND_WINDOW_HOURS,
@@ -36,7 +38,9 @@ const state: {
   hours: number;
   charts: Record<string, Chart>;
   calcShown: boolean;
-} = { status: null, records: [], burns: null, latest: null, hours: 72, charts: {}, calcShown: false };
+  pool: AlloyedPoolState | null;
+  poolError?: string;
+} = { status: null, records: [], burns: null, latest: null, hours: 72, charts: {}, calcShown: false, pool: null };
 const lastGood = new Map<CheckId, CheckResult>();
 
 // ---------------------------------------------------------------- helpers
@@ -222,20 +226,56 @@ function renderChecks(s: StatusSnapshot) {
 }
 
 // ---------------------------------------------------------------- calculator (local bigint math)
-function runCalc() {
-  const out = $("calc-result");
-  if (!state.status) return;
-  const direction = ($("calc-direction") as HTMLSelectElement).value as "noble-eth" | "eth-noble";
-  let amount: bigint;
+async function readPool() {
   try {
-    amount = parseUsdc(($("calc-amount") as HTMLInputElement).value);
-    if (amount <= 0n) throw new Error("Amount must be greater than 0");
+    state.pool = await fetchAlloyedPool(cfg.osmosisLcdUrls, { timeoutMs: cfg.requestTimeoutMs });
+    state.poolError = undefined;
   } catch (err) {
-    out.replaceChildren(h("p", { class: "error-text", text: (err as Error).message }));
-    return;
+    // Keep the previous reading: it turns "unknown" by itself once it is stale.
+    state.poolError = (err as Error).message.split(": ")[0];
   }
-  state.calcShown = true;
-  const r = calculate(state.status, direction, amount, cfg.safetyMargin);
+}
+
+const stat = (label: string, v: string | null, unit: string | false = "USDC", note?: string) =>
+  h("div", {},
+    h("div", { class: "stat-label", text: label }),
+    h("div", { class: "stat-value" }, unit ? fmtDec(v) : v ?? "—", unit ? h("span", { class: "unit", text: unit }) : null),
+    note ? h("div", { class: "stat-note", text: note }) : null);
+
+const OSMO_ICON: Record<OsmosisStatus, IconKind> = { ok: "good", insufficient: "critical", unavailable: "pause", unknown: "unknown" };
+const OSMO_LABEL: Record<OsmosisStatus, string> = { ok: "Enough liquidity", insufficient: "Not enough liquidity", unavailable: "Unavailable", unknown: "Unknown" };
+
+function optionCard(id: RouteOptionId, recommended: boolean, title: string, statusEl: HTMLElement, ...body: Child[]) {
+  return h("article", { class: `option${recommended ? " recommended" : ""}`, "data-option": id, "aria-label": `${title}${recommended ? " (recommended)" : ""}` },
+    h("div", { class: "option-head" },
+      h("h3", {}, title, h("span", { class: "tag", text: recommended ? "Recommended" : id === "osmosis" ? "Preferred when liquid" : "Fallback" })),
+      statusEl),
+    body);
+}
+
+function osmosisCard(o: OsmosisOption, recommended: boolean, amount: bigint) {
+  const status = h("span", { class: "pill" }, icon(OSMO_ICON[o.status]), h("span", { text: OSMO_LABEL[o.status] }));
+  return optionCard("osmosis", recommended, o.label, status,
+    h("p", { class: `option-detail ${o.status === "ok" ? "good-text" : o.status === "insufficient" ? "error-text" : ""}`, text: o.status_detail }),
+    h("div", { class: "calc-summary" },
+      stat(`Pool balance (${o.asset_out.symbol})`, o.available_usdc, "USDC", "The most one swap can take out"),
+      stat(`Usable (balance × ${cfg.safetyMargin.text})`, o.usable_usdc),
+      stat("Swap", `${o.asset_in.symbol} → ${o.asset_out.symbol}`, false, "1:1 transmuter swap")),
+    h("ol", { class: "steps" }, o.steps.map((t) => h("li", { text: t }))),
+    h("p", { class: "links" },
+      h("a", { href: skipGoUrl(amount), target: "_blank", rel: "noopener", text: "Open in Skip Go" }), " · ",
+      h("a", { href: OSMOSIS.poolUrl, target: "_blank", rel: "noopener", text: `Pool ${OSMOSIS.poolId} on Osmosis` }),
+      o.source_url ? [" · ", h("a", { href: o.source_url, target: "_blank", rel: "noopener", text: "Raw balances" })] : null),
+    o.fetched_at
+      ? h("p", { class: "muted small" },
+          `Read ${ago(o.fetched_at)} from ${[o.endpoint, o.block ? `block ${o.block}` : null].filter(Boolean).join(" · ")}`,
+          o.stale ? h("span", { class: "stale-tag", text: "STALE" }) : null)
+      : null,
+    h("ul", { class: "warnings" }, o.notes.map((w) => h("li", { text: w }))));
+}
+
+function cctpCard(p: RoutePlan) {
+  const r = p.cctp;
   const fitsEl =
     r.fits_destination_cap === null
       ? h("span", { class: "fits" }, icon("unknown"), "Destination allowance unknown")
@@ -250,17 +290,47 @@ function runCalc() {
     else items.push(h("li", { text: `${count} × ${fmtDec(g.amount_usdc)} USDC` }));
     n += count;
   }
-  const stat = (label: string, v: string | null, unit = true) =>
-    h("div", {}, h("div", { class: "stat-label", text: label }), h("div", { class: "stat-value" }, unit ? fmtDec(v) : v ?? "—", unit ? h("span", { class: "unit", text: "USDC" }) : null));
-  out.replaceChildren(
+  const status = h("span", { class: "pill" }, icon(ROUTE_ICON[r.route_state] ?? "unknown"), h("span", { text: r.route_state }));
+  const title = p.direction === "noble-eth" ? "Noble → Ethereum USDC via CCTP V1" : `CCTP V1 direct: ${r.route_label}`;
+  return optionCard("cctp", p.recommended === "cctp", title, status,
     h("div", { class: "calc-summary" },
       stat("Messages needed", r.messages, false),
       stat(`Safe chunk (limit × ${r.safety_margin})`, r.safe_chunk_usdc),
       stat("Per-message limit", r.per_tx_limit_usdc),
       stat("Destination allowance", r.destination_cap_usdc)),
-    h("p", {}, fitsEl, h("span", { class: "muted", text: ` · ${fmtDec(r.amount_usdc)} USDC ${r.route_label}, route ${r.route_state}` })),
+    h("p", {}, fitsEl),
     items.length ? h("details", { open: n <= 20 }, h("summary", { text: `Chunks (${n})` }), h("ol", { class: "chunks" }, items)) : "",
     h("ul", { class: "warnings" }, r.warnings.map((w) => h("li", { text: w }))));
+}
+
+function runCalc() {
+  const out = $("calc-result");
+  if (!state.status) return;
+  const direction = ($("calc-direction") as HTMLSelectElement).value as Direction;
+  let amount: bigint;
+  try {
+    amount = parseUsdc(($("calc-amount") as HTMLInputElement).value);
+    if (amount <= 0n) throw new Error("Amount must be greater than 0");
+  } catch (err) {
+    out.replaceChildren(h("p", { class: "error-text", text: (err as Error).message }));
+    return;
+  }
+  state.calcShown = true;
+  const p = planRoutes(state.status, direction, amount, cfg.safetyMargin, state.pool, {
+    now: new Date(),
+    staleAfterMs: (state.status.config.stale_after_sec ?? 2 * POLL_SEC) * 1000,
+    poolError: state.poolError,
+  });
+  const cctp = cctpCard(p);
+  const osmo = p.osmosis ? osmosisCard(p.osmosis, p.recommended === "osmosis", amount) : null;
+  const cards = p.recommended === "osmosis" ? [osmo, cctp] : [cctp, osmo];
+  const recLabel = p.recommended === "osmosis" ? p.osmosis!.label : p.direction === "noble-eth" ? "Noble → Ethereum USDC via CCTP V1" : "CCTP V1 direct";
+  const recIcon: IconKind = p.recommended === "osmosis" || p.cctp.route_state === "OPEN" ? "good" : "warning";
+  out.replaceChildren(
+    h("p", { class: "recommendation" },
+      icon(recIcon),
+      h("span", {}, h("strong", { text: `Recommended for ${fmtDec(p.amount_usdc)} USDC: ${recLabel}. ` }), p.recommended_reason)),
+    h("div", { class: "options" }, cards));
 }
 
 // ---------------------------------------------------------------- chart helpers
@@ -531,7 +601,8 @@ async function loadData() {
 async function loadStatus() {
   const updated = $("updated");
   try {
-    const s = await readLive();
+    // The pool read never throws; it only feeds the calculator.
+    const [s] = await Promise.all([readLive(), readPool()]);
     state.status = s;
     renderRoutes(s);
     renderChecks(s);

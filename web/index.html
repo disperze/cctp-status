@@ -30,15 +30,16 @@
 
     <section aria-labelledby="calc-h" class="card">
       <h2 id="calc-h">Transfer calculator</h2>
+      <p class="muted small">Exit Noble USDC into Circle-native USDC. Two exits are checked live: <strong>USDC.inj</strong> through the Osmosis allUSDC pool 3497 via Skip Go (preferred whenever the pool has enough USDC.inj for the whole amount), or <strong>Ethereum USDC</strong> through CCTP V1.</p>
       <form id="calc-form" class="calc-form">
         <label>Direction
           <select id="calc-direction">
-            <option value="noble-eth">Noble → Ethereum</option>
+            <option value="noble-eth">Exit Noble → USDC.inj or Ethereum</option>
             <option value="eth-noble">Ethereum → Noble</option>
           </select>
         </label>
         <label>Amount (USDC)
-          <input id="calc-amount" inputmode="decimal" autocomplete="off" value="2,000,000" />
+          <input id="calc-amount" inputmode="decimal" autocomplete="off" value="1,000" />
         </label>
         <button type="submit">Calculate</button>
       </form>
@@ -113,6 +114,10 @@
       <li>Noble REST paths from the <code>query.proto</code> HTTP annotations in
         <a href="https://github.com/circlefin/noble-cctp/blob/master/proto/circle/cctp/v1/query.proto" target="_blank" rel="noopener">circlefin/noble-cctp</a> and
         <a href="https://github.com/circlefin/noble-fiattokenfactory/blob/master/proto/circle/fiattokenfactory/v1/query.proto" target="_blank" rel="noopener">circlefin/noble-fiattokenfactory</a>.</li>
+      <li>Osmosis allUSDC pool 3497: balances, <code>is_active</code> and corrupted denoms are read live from the
+        <a href="https://github.com/osmosis-labs/transmuter" target="_blank" rel="noopener">transmuter</a> contract
+        (<a href="https://app.osmosis.zone/pool/3497" target="_blank" rel="noopener">pool page</a>). The route itself runs in
+        <a href="https://go.skip.build" target="_blank" rel="noopener">Skip Go</a>.</li>
       <li>Published data (updated every ~15 min by a GitHub Action):
         <a id="link-latest" target="_blank" rel="noopener">latest.json</a> ·
         <a id="link-history" target="_blank" rel="noopener">history.json</a> ·

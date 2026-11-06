@@ -37,6 +37,7 @@ jobs:
           # Shipped to every visitor's browser: use public, keyless endpoints only.
           VITE_ETH_RPC_URLS: ${{ vars.ETH_RPC_URLS }}
           VITE_NOBLE_LCD_URLS: ${{ vars.NOBLE_LCD_URLS }}
+          VITE_OSMOSIS_LCD_URLS: ${{ vars.OSMOSIS_LCD_URLS }}
           VITE_SAFETY_MARGIN: ${{ vars.SAFETY_MARGIN }}
           VITE_ALLOWANCE_WARN_USDC: ${{ vars.ALLOWANCE_WARN_USDC }}
           VITE_TREND_WINDOW_HOURS: ${{ vars.TREND_WINDOW_HOURS }}

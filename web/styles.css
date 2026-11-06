@@ -171,3 +171,18 @@ footer.sources ul { padding-left: 18px; margin: 0; display: grid; gap: 6px; }
   input { width: 100%; }
   .calc-form label { flex: 1 1 100%; }
 }
+
+/* --- calculator route options --- */
+.recommendation { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--wash); }
+.recommendation svg { flex: none; margin-top: 3px; }
+.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start; }
+.option { border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.option.recommended { border: 2px solid var(--good); }
+.option-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.option-head h3 { font-size: 0.98rem; margin: 0; }
+.option .tag { margin-left: 8px; font-size: 0.7rem; font-weight: 600; color: var(--ink-2); border: 1px solid var(--border); border-radius: 99px; padding: 1px 8px; vertical-align: middle; white-space: nowrap; }
+.option.recommended .tag { color: var(--good-text); border-color: currentColor; }
+.option-detail { margin: 0 0 10px; font-weight: 600; }
+.good-text { color: var(--good-text); }
+.steps { margin: 4px 0 8px; padding-left: 22px; font-size: 0.9rem; }
+.links { margin: 6px 0; font-size: 0.88rem; }

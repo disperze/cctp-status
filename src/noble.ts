@@ -16,6 +16,9 @@ export interface NobleDeps {
   now?: () => Date;
 }
 
+/** What a plain LCD GET needs (shared with the Osmosis reads). */
+export type LcdDeps = Pick<NobleDeps, "fetch" | "timeoutMs">;
+
 export class LcdHttpError extends Error {
   constructor(
     message: string,
@@ -29,12 +32,12 @@ export class LcdHttpError extends Error {
 
 const GRPC_NOT_FOUND = 5;
 
-interface LcdResponse<T> {
+export interface LcdResponse<T> {
   body: T;
   height?: string;
 }
 
-async function lcdGet<T>(base: string, path: string, deps: NobleDeps): Promise<LcdResponse<T>> {
+export async function lcdGet<T>(base: string, path: string, deps: LcdDeps): Promise<LcdResponse<T>> {
   const f = deps.fetch ?? fetch;
   const res = await f(base + path, {
     headers: { accept: "application/json" },

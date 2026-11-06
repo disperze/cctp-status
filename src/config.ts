@@ -75,6 +75,35 @@ export const NOBLE = {
   depositForBurnEvent: "circle.cctp.v1.DepositForBurn",
 } as const;
 
+// ---------------------------------------------------------------------------
+// Osmosis allUSDC alloyed-asset transmuter, pool 3497 (CosmWasm transmuter v3).
+// It swaps its member USDC variants 1:1 (every normalization_factor is 1), so a
+// swap out of member X can never exceed the pool's balance of X.
+// Verified on 2026-11-06 (`npm run verify`):
+//   GET /osmosis/poolmanager/v1beta1/pools/3497 -> contract_address, alloyed_asset_subdenom "allUSDC"
+//   GET /ibc/apps/transfer/v1/denom_traces/{hash} -> the paths below
+//   Skip Go routes noble-1 uusdc -> injective-1 USDC through this pool.
+// ---------------------------------------------------------------------------
+export const OSMOSIS = {
+  poolId: 3497,
+  contract: "osmo147h5x9pcj7lm0cttlaefx6sqq5vdfnmwfcqxkmjd7exqm9gc7grqhr75m0",
+  alloyedDenom: "factory/osmo147h5x9pcj7lm0cttlaefx6sqq5vdfnmwfcqxkmjd7exqm9gc7grqhr75m0/alloyed/allUSDC",
+  /** USDC.n: Noble uusdc on Osmosis, transfer/channel-750. */
+  usdcNoble: "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4",
+  /** USDC.inj: Circle-native USDC on Injective (erc20:0xa00C59fF5a080D2b954d0c75e46E22a0c371235a), transfer/channel-122. */
+  usdcInjective: "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138",
+  injectiveUsdc: "erc20:0xa00C59fF5a080D2b954d0c75e46E22a0c371235a",
+  traces: {
+    "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4": { path: "transfer/channel-750", base_denom: "uusdc" },
+    "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138": {
+      path: "transfer/channel-122",
+      base_denom: "erc20:0xa00C59fF5a080D2b954d0c75e46E22a0c371235a",
+    },
+  } as Record<string, { path: string; base_denom: string }>,
+  poolUrl: "https://app.osmosis.zone/pool/3497",
+  skipUrl: "https://go.skip.build",
+} as const;
+
 export const USDC_DECIMALS = 6;
 
 export const RETIREMENT_DATES = [
@@ -89,6 +118,8 @@ export const RETIREMENT_DATES = [
 // ---------------------------------------------------------------------------
 const DEFAULT_ETH_RPC_URLS = ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org", "https://1rpc.io/eth"];
 const DEFAULT_NOBLE_LCD_URLS = ["https://noble-api.polkachu.com", "https://api.noble.xyz", "https://rest.cosmos.directory/noble"];
+// lcd.osmosis.zone is not listed: it answers 403 to CosmWasm smart queries.
+const DEFAULT_OSMOSIS_LCD_URLS = ["https://osmosis-api.polkachu.com", "https://osmosis-rest.publicnode.com", "https://rest.cosmos.directory/osmosis"];
 
 function list(v: string | undefined, fallback: string[]): string[] {
   const out = (v ?? "")
@@ -108,6 +139,8 @@ function num(v: string | undefined, fallback: number, name: string): number {
 export interface AppConfig {
   ethRpcUrls: string[];
   nobleLcdUrls: string[];
+  /** Osmosis LCDs for the allUSDC pool liquidity read (must allow CosmWasm smart queries). */
+  osmosisLcdUrls: string[];
   /** History snapshot interval. */
   snapshotIntervalMin: number;
   /** /api/status cache TTL; also the "poll interval" used for staleness (stale = 2x this). */
@@ -145,6 +178,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     ethRpcUrls: list(env.ETH_RPC_URLS, DEFAULT_ETH_RPC_URLS),
     nobleLcdUrls: list(env.NOBLE_LCD_URLS, DEFAULT_NOBLE_LCD_URLS),
+    osmosisLcdUrls: list(env.OSMOSIS_LCD_URLS, DEFAULT_OSMOSIS_LCD_URLS),
     snapshotIntervalMin: num(env.SNAPSHOT_INTERVAL_MIN, 15, "SNAPSHOT_INTERVAL_MIN"),
     statusCacheSec: num(env.STATUS_CACHE_SEC, 45, "STATUS_CACHE_SEC"),
     safetyMargin: { ...margin, text: marginText },
