@@ -5,7 +5,7 @@ name: Snapshot
 
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *" # GitHub may start scheduled runs several minutes late
+    - cron: "3 */6 * * *" # GitHub may start scheduled runs several minutes late
   workflow_dispatch:
 
 permissions:
