@@ -1,10 +1,12 @@
 // CCTP V1 status page: static, no backend.
 //  - Live checks are read from the chain by this browser (Noble LCD + Ethereum RPC).
 //  - History and burns come from JSON published by the GitHub Action (VITE_DATA_URL).
+//  - The IBC escrow tab is read only when it is first opened (Noble LCD balances + escrow.json).
 // All API strings are inserted with textContent (never innerHTML). Amount math is bigint.
 import Chart from "chart.js/auto";
 import type { BurnsFile } from "../src/burns";
 import { domainName, ETH, loadConfig, OSMOSIS } from "../src/config";
+import { escrowChange, ESCROW_CHAINS, fetchEscrow, pct, type EscrowChange, type EscrowFile, type EscrowReading } from "../src/escrow";
 import { fetchEthereumChecks } from "../src/ethereum";
 import { changeInfo, chartSeries, type SeriesPoint } from "../src/history";
 import { fetchNobleChecks, type RecentBurn } from "../src/noble";
@@ -40,7 +42,11 @@ const state: {
   calcShown: boolean;
   pool: AlloyedPoolState | null;
   poolError?: string;
-} = { status: null, records: [], burns: null, latest: null, hours: 72, charts: {}, calcShown: false, pool: null };
+  escrow: { reading: EscrowReading | null; file: EscrowFile | null; error?: string; fileError?: string; loading: boolean; loadedAt: number };
+} = {
+  status: null, records: [], burns: null, latest: null, hours: 72, charts: {}, calcShown: false, pool: null,
+  escrow: { reading: null, file: null, loading: false, loadedAt: 0 },
+};
 const lastGood = new Map<CheckId, CheckResult>();
 
 // ---------------------------------------------------------------- helpers
@@ -607,6 +613,165 @@ function renderActivity(items: RecentBurn[]) {
     next);
 }
 
+
+// ---------------------------------------------------------------- IBC escrow (lazy: loaded when the tab opens)
+const ESCROW_REFRESH_MS = 60_000;
+const MINTSCAN_ADDR = "https://www.mintscan.io/noble/address/";
+
+async function loadEscrow(force = false) {
+  const e = state.escrow;
+  if (e.loading || (!force && e.reading && Date.now() - e.loadedAt < ESCROW_REFRESH_MS)) return;
+  e.loading = true;
+  const btn = $("escrow-refresh") as HTMLButtonElement;
+  btn.disabled = true;
+  if (!e.reading) $("escrow-meta").textContent = "Reading Noble escrow balances…";
+  const [live, file] = await Promise.allSettled([
+    fetchEscrow(cfg.nobleLcdUrls, { timeoutMs: cfg.requestTimeoutMs }),
+    getJson<EscrowFile>(`${DATA_URL}/escrow.json`),
+  ]);
+  if (live.status === "fulfilled") {
+    e.reading = live.value;
+    e.error = undefined;
+    e.loadedAt = Date.now();
+  } else e.error = (live.reason as Error)?.message?.split(": ")[0] ?? String(live.reason);
+  if (file.status === "fulfilled") {
+    e.file = file.value;
+    e.fileError = undefined;
+  } else e.fileError = (file.reason as Error)?.message ?? String(file.reason);
+  e.loading = false;
+  btn.disabled = false;
+  renderEscrow();
+}
+
+/** Whole-USDC with an explicit sign: +1,234 / −1,234 / 0 */
+const fmtSigned = (raw: bigint) => (raw > 0n ? "+" : raw < 0n ? "−" : "") + fmtRawWhole(raw < 0n ? -raw : raw);
+const fmtPct = (p: string) => (p.startsWith("-") ? "−" + p.slice(1) : "+" + p) + "%";
+
+function deltaCell(c: EscrowChange | null): HTMLElement {
+  if (!c) return h("td", { class: "num muted", title: "Not enough daily snapshots yet", text: "—" });
+  const d = BigInt(c.delta_raw);
+  const arrow = d > 0n ? "▲ " : d < 0n ? "▼ " : "";
+  return h("td", { class: "num", title: `vs ${fmtTime(c.since)} (${fmtRawWhole(BigInt(c.previous_raw))} USDC)` },
+    h("span", { class: "delta" }, arrow + fmtSigned(d), c.delta_pct !== null ? h("span", { class: "pct", text: `(${fmtPct(c.delta_pct)})` }) : null));
+}
+
+const shortAddr = (addr: string) => `${addr.slice(0, 10)}…${addr.slice(-6)}`;
+
+function renderEscrow() {
+  const { reading: r, file, error, fileError } = state.escrow;
+  const meta = $("escrow-meta");
+  if (!r) {
+    meta.replaceChildren(h("span", { class: "error-text", text: `Live read failed (${error ?? "unknown error"}).` }), " Use Refresh to try again.");
+    return;
+  }
+  const now = new Date(r.fetched_at);
+  const days = file?.days ?? [];
+  meta.replaceChildren(
+    `Read live ${ago(r.fetched_at)} from ${[r.endpoint, r.block ? `block ${r.block}` : null].filter(Boolean).join(" · ")}. `,
+    error ? h("span", { class: "error-text", text: `Latest refresh failed (${error}); showing the previous reading. ` }) : "",
+    days.length
+      ? `24h / 7d change is measured against the nearest daily snapshot (${days.length} recorded since ${days[0]!.date}).`
+      : `No daily snapshots published yet${fileError ? ` (${fileError})` : ""}: 24h / 7d change appears once the scheduled job has recorded a few days.`);
+
+  const keys = r.chains.map((c) => c.chain);
+  const total = r.chains.reduce((s, c) => s + BigInt(c.balance_raw), 0n);
+  const ibcTotal = r.total_escrow_raw !== null ? BigInt(r.total_escrow_raw) : null;
+  const supply = r.supply_raw !== null ? BigInt(r.supply_raw) : null;
+  const sumChange = (hours: number) => escrowChange(days, { raw: total }, keys, hours, now);
+  const tile = (label: string, raw: bigint | null, note?: string) =>
+    h("div", {}, h("div", { class: "stat-label", text: label }),
+      h("div", { class: "stat-value" }, raw === null ? "—" : fmtRawWhole(raw), raw === null ? null : h("span", { class: "unit", text: "USDC" })),
+      note ? h("div", { class: "stat-note", text: note }) : null);
+  const changeTile = (label: string, c: EscrowChange | null) =>
+    h("div", {}, h("div", { class: "stat-label", text: label }),
+      h("div", { class: "stat-value" }, c ? fmtSigned(BigInt(c.delta_raw)) : "—", c ? h("span", { class: "unit", text: "USDC" }) : null),
+      h("div", { class: "stat-note", text: c ? `${c.delta_pct !== null ? `${fmtPct(c.delta_pct)} · ` : ""}vs ${fmtTime(c.since)}` : "Needs more daily snapshots" }));
+  $("escrow-stats").replaceChildren(
+    tile(`In these ${r.chains.length} escrows`, total, ibcTotal ? `${pct(total, ibcTotal)}% of all Noble IBC escrow` : undefined),
+    tile("All Noble IBC escrow", ibcTotal, "Every IBC channel (ibc-go total_escrow)"),
+    tile("Noble USDC supply", supply, supply && ibcTotal ? `${pct(ibcTotal, supply)}% of it is escrowed on IBC` : undefined),
+    changeTile("Change 24h (these chains)", sumChange(24)),
+    changeTile("Change 7d (these chains)", sumChange(168)));
+
+  const head = h("tr", {}, ["Chain", "Channel (Noble → chain)", "Escrow address", "USDC in escrow", "Share", "24h", "7d"].map((t, i) =>
+    h("th", { scope: "col", class: i >= 3 ? "num" : "", text: t })));
+  const byBalance = r.chains.slice().sort((a, b) => {
+    const d = BigInt(b.balance_raw) - BigInt(a.balance_raw);
+    return d > 0n ? 1 : d < 0n ? -1 : 0;
+  });
+  const rows = byBalance.map((c) => {
+    const raw = BigInt(c.balance_raw);
+    const share = total > 0n ? pct(raw, total) : "0.00";
+    const bar = h("b");
+    bar.style.width = `${Math.min(100, Number(share))}%`;
+    return h("tr", {},
+      h("th", { scope: "row", text: c.label }),
+      h("td", {},
+        h("a", { href: c.registry_url, target: "_blank", rel: "noopener", class: "mono", title: "Channel entry in the chain registry", text: `${c.noble_channel} → ${c.counterparty_channel}` })),
+      h("td", {},
+        h("a", { href: MINTSCAN_ADDR + c.escrow_address, target: "_blank", rel: "noopener", class: "mono", title: c.escrow_address, text: shortAddr(c.escrow_address) }),
+        " ", h("a", { href: c.source_url, target: "_blank", rel: "noopener", class: "muted small", title: "Raw balance from the Noble LCD", text: "LCD" })),
+      h("td", { class: "num", title: `${formatUsdc(raw)} USDC`, text: fmtRawWhole(raw) }),
+      h("td", { class: "num" }, h("span", { class: "share" }, h("i", { "aria-hidden": "true" }, bar), `${share}%`)),
+      deltaCell(escrowChange(days, { raw, channel: c.noble_channel }, c.chain, 24, now)),
+      deltaCell(escrowChange(days, { raw, channel: c.noble_channel }, c.chain, 168, now)));
+  });
+  const foot = h("tr", {},
+    h("td", { colspan: "3", text: `Total (${r.chains.length} chains)` }),
+    h("td", { class: "num", text: fmtRawWhole(total) }),
+    h("td", { class: "num", text: "100%" }),
+    deltaCell(sumChange(24)),
+    deltaCell(sumChange(168)));
+  $("escrow-table").replaceChildren(h("thead", {}, head), h("tbody", {}, rows), h("tfoot", {}, foot));
+  $("escrow-note").textContent =
+    "Escrow counts USDC that left Noble over that channel. USDC forwarded from that chain to a third chain stays in the first chain's escrow. Hover a change to see the snapshot it is compared with.";
+
+  // Daily snapshots, newest first.
+  const histKeys = ESCROW_CHAINS.map((c) => c.chain).filter((k) => keys.includes(k));
+  const labelOf = (k: string) => r.chains.find((c) => c.chain === k)?.label ?? k;
+  $("escrow-history").replaceChildren(
+    h("thead", {}, h("tr", {}, h("th", { text: "Day (UTC)" }), histKeys.map((k) => h("th", { class: "num", text: labelOf(k) })), h("th", { class: "num", text: "Total" }))),
+    h("tbody", {}, days.length
+      ? days.slice().reverse().map((d) => {
+          const sum = histKeys.reduce((s, k) => s + BigInt(d.balances[k] ?? "0"), 0n);
+          return h("tr", {},
+            h("td", { title: d.ts, text: d.date }),
+            histKeys.map((k) => h("td", { class: "num", text: d.balances[k] !== undefined ? fmtRawWhole(BigInt(d.balances[k]!)) : "—" })),
+            h("td", { class: "num", text: fmtRawWhole(sum) }));
+        })
+      : [h("tr", {}, h("td", { colspan: String(histKeys.length + 2), class: "muted", text: "No daily snapshots yet." }))]));
+}
+
+// ---------------------------------------------------------------- tabs
+const TABS = ["cctp", "escrow"] as const;
+type Tab = (typeof TABS)[number];
+
+function selectTab(tab: Tab, focus = false) {
+  for (const t of TABS) {
+    const btn = $(`tab-${t}`);
+    const on = t === tab;
+    btn.setAttribute("aria-selected", String(on));
+    btn.tabIndex = on ? 0 : -1;
+    $(`panel-${t}`).hidden = !on;
+    if (on && focus) btn.focus();
+  }
+  history.replaceState(null, "", tab === "cctp" ? location.pathname + location.search : "#escrow");
+  if (tab === "escrow") void loadEscrow();
+}
+
+$("tabs").addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
+  if (btn) selectTab(btn.id.slice(4) as Tab);
+});
+$("tabs").addEventListener("keydown", (e) => {
+  const i = TABS.findIndex((t) => $(`tab-${t}`).getAttribute("aria-selected") === "true");
+  const next = ({ ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 } as Record<string, number>)[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  selectTab(TABS[(next + TABS.length) % TABS.length]!, true);
+});
+$("escrow-refresh").addEventListener("click", () => void loadEscrow(true));
+
 // ---------------------------------------------------------------- loops
 async function loadData() {
   const [hist, burns, latest] = await Promise.allSettled([
@@ -660,9 +825,11 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   renderBurns();
   if (state.status) renderRoutes(state.status);
 });
-for (const [id, file] of [["link-latest", "latest.json"], ["link-history", "history.json"], ["link-burns", "burns.json"]]) {
+for (const [id, file] of [["link-latest", "latest.json"], ["link-history", "history.json"], ["link-burns", "burns.json"], ["link-escrow", "escrow.json"]]) {
   $(id!).setAttribute("href", `${DATA_URL}/${file}`);
 }
+
+if (location.hash === "#escrow") selectTab("escrow");
 
 // History first (the trend rule needs it), then the live read.
 await loadData().catch(() => {});

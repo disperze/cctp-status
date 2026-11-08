@@ -1,4 +1,5 @@
-# Every ~15 min: read all checks on-chain, sync Noble burns, and publish JSON to the
+# Every ~15 min: read all checks on-chain, sync Noble burns, record the daily IBC escrow
+# reading (once per UTC day), and publish JSON to the
 # `data` branch (kept as a single force-pushed commit so the repo doesn't grow).
 # The page reads https://raw.githubusercontent.com/<owner>/<repo>/data/*.json
 name: Snapshot

@@ -120,6 +120,9 @@ Node 20.19+ (Vite 8). `.env` is loaded automatically by the Node scripts; see [.
   a per-destination table, and the 25 most recent burns.
 - **Limit history**: per-message limits and destination allowances over time, "last changed at" with the delta, and a table view.
 - **All checks**: every raw value with its status, age, the endpoint and block height that answered, and a link to verify it yourself.
+- **IBC escrow tab**: Noble USDC locked in the ICS-20 escrow account of each top counterparty (dYdX, Osmosis, Neutron,
+  Cosmos Hub, Injective, Terra), i.e. how much Noble USDC sits on each chain. Read only when the tab is opened (or the
+  page is loaded with `#escrow`); see [IBC escrow](#ibc-escrow).
 
 All amounts are 6-decimal base-unit integers handled as `bigint` end to end. Chart line positions use floats for
 plotting only; tooltips, labels and tables show exact values.
@@ -227,6 +230,44 @@ and adds every `DepositForBurn` event to `burns.json`, bucketed by UTC day and d
 - Burn txs are heavy (relayer light-client headers, ~70 KB each), so the sync is capped per run and uses a 60 s timeout.
 - A burn-sync failure never blocks the status snapshot. The previous `burns.json` is kept and retried next run.
 
+## IBC escrow
+
+An ICS-20 channel and its escrow address never change, so both are fixed in `ESCROW_CHAINS` (`src/escrow.ts`):
+the `transfer` ↔ `transfer` channel tagged `preferred` in the
+[Cosmos chain registry](https://github.com/cosmos/chain-registry/tree/master/_IBC) (`_IBC/dydx-noble.json`,
+`noble-osmosis.json`, …), and its escrow address as ibc-go `GetEscrowAddress` derives it:
+`bech32("noble", sha256("ics20-1" ‖ 0x00 ‖ "transfer/<channel>")[:20])`. Neither the page nor the Action fetches the
+registry; `npm run verify` re-checks every entry against the registry and Noble mainnet.
+
+When the tab is opened, the browser reads every balance from one Noble LCD (same block), plus `total_escrow` for uusdc
+and the uusdc supply for context:
+
+```
+GET /cosmos/bank/v1beta1/balances/{escrow}/by_denom?denom=uusdc
+GET /ibc/apps/transfer/v1/denoms/uusdc/total_escrow
+GET /cosmos/bank/v1beta1/supply/by_denom?denom=uusdc
+```
+
+| Chain | Noble channel | Chain channel | Escrow address |
+|---|---|---|---|
+| dYdX | channel-33 | channel-0 | `noble1ukv0qhw3zszzyjty32cck2j229ekpmr6g806yp` |
+| Osmosis | channel-1 | channel-750 | `noble1kq2rzz6fq2q7fsu75a9g7cpzjeanmk68qxshr6` |
+| Neutron | channel-18 | channel-30 | `noble1gw2v3j8jxpmnq73rmu3vjz5egle5eep4xvvjtu` |
+| Cosmos Hub | channel-4 | channel-536 | `noble17sael2kcmm8npe2pmkxj3un90xfg60vvuk39mn` |
+| Injective | channel-31 | channel-148 | `noble1vn26uz7pxhz5aqd4s4q8kuar84ev9emhhgxuc2` |
+| Terra | channel-30 | channel-253 | `noble12vssh8spx53qzg532xpj22sa7e85ts4x76e5rm` |
+
+Verified 2026-11-07 against the registry and `GET /ibc/apps/transfer/v1/channels/{channel}/ports/transfer/escrow_address`.
+
+**Daily snapshots and 24h / 7d change.** The scheduled Action records one escrow reading per UTC day into
+`escrow.json` (the first run after 00:00 UTC; later runs that day skip the reads, and a day missing a chain is retried).
+The page compares the live balance with the daily snapshot nearest to 24 h / 7 d ago. The baseline must be at least
+half the window old and on the same channel, and its timestamp is shown on hover. Changes appear once a few days have
+been recorded. An escrow read failure never blocks the status snapshot.
+
+Escrow counts USDC that left Noble over that channel. USDC forwarded from that chain to a third chain stays in the first
+chain's escrow.
+
 ## Published data
 
 Served from the `data` branch, e.g. `https://raw.githubusercontent.com/<owner>/<repo>/data/latest.json`
@@ -237,6 +278,7 @@ Served from the `data` branch, e.g. `https://raw.githubusercontent.com/<owner>/<
 | `latest.json` | The last full status snapshot from the Action: all 13 checks in the shape below, both routes, config, dates |
 | `history.json` | Compact snapshots for the last `HISTORY_PUBLISH_DAYS` (default 30): A1, B1, A5, B2 + route states |
 | `burns.json` | `days[YYYY-MM-DD][domain] = {count, amount_raw}`, `recent[]` (25 newest), `cursor_height`, `tracking_since`, `caught_up` |
+| `escrow.json` | One reading per UTC day (`days[]`, last 400): uusdc per chain escrow, the Noble channel used, `total_escrow_raw`, `supply_raw` |
 | `snapshots.jsonl` | Full snapshot history, one JSON object per line (the Action's source of truth) |
 
 Each check has this shape:
@@ -315,8 +357,9 @@ src/                 shared TypeScript (runs in Node and in the browser unless n
   routes.ts          calculator exits: USDC.inj via Osmosis (preferred) vs CCTP V1
   history.ts         chart series, last-changed/delta, change detection
   burns.ts           incremental daily burn sync
+  escrow.ts          IBC escrow: fixed channels + escrow addresses, balances, daily history
   storage.ts         JSONL / SQLite snapshot store          (Node)
-  publish.ts         writes latest/history/burns JSON       (Node)
+  publish.ts         writes latest/history/burns/escrow JSON (Node)
   service.ts         snapshot + carry-forward + alerts      (Node)
   alerts.ts          webhook / Telegram                     (Node)
   server.ts, index.ts  optional self-hosted API             (Node)

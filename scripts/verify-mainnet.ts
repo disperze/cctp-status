@@ -7,6 +7,7 @@ import { createPublicClient, getAddress, http } from "viem";
 import { mainnet } from "viem/chains";
 import { messageTransmitterAbi, tokenMessengerAbi, tokenMinterAbi } from "../src/abis";
 import { DOMAIN, ETH, NOBLE, OSMOSIS, loadConfig } from "../src/config";
+import { ESCROW_CHAINS, escrowAddress, fetchRegistryChannel } from "../src/escrow";
 import { fetchEthereumChecks } from "../src/ethereum";
 import { withFailover } from "../src/failover";
 import { ETH_TOKEN_MESSENGER_BYTES32, base64ToHex, fetchNobleChecks, getCctpModuleAddress, lcdGet, lcdQuery } from "../src/noble";
@@ -100,6 +101,24 @@ try {
   console.log(`      USDC.n ${formatUsdc(BigInt(pool.liquidity_raw[OSMOSIS.usdcNoble] ?? "0"))} · USDC.inj ${formatUsdc(BigInt(pool.liquidity_raw[OSMOSIS.usdcInjective] ?? "0"))}`);
 } catch (err) {
   assert(false, "pool liquidity readable", (err as Error).message);
+}
+
+console.log("\n== Noble: IBC escrow (chain registry)");
+for (const def of ESCROW_CHAINS) {
+  try {
+    const ch = await fetchRegistryChannel(def.chain, lcd);
+    assert(ch.noble_channel === def.noble_channel && ch.counterparty_channel === def.counterparty_channel,
+      `${def.label}: registry channel == ${def.noble_channel} -> ${def.counterparty_channel}`, `${ch.noble_channel} -> ${ch.counterparty_channel}`);
+  } catch (err) {
+    assert(false, `${def.label}: chain registry readable`, (err as Error).message);
+  }
+  assert(escrowAddress("transfer", def.noble_channel) === def.escrow_address, `${def.label}: ${def.escrow_address} == GetEscrowAddress(transfer, ${def.noble_channel})`);
+  try {
+    const { value } = await lcdQuery<any>(cfg.nobleLcdUrls, `/ibc/apps/transfer/v1/channels/${def.noble_channel}/ports/transfer/escrow_address`, deps);
+    assert(value.body?.escrow_address === def.escrow_address, `${def.label}: escrow address == Noble escrow_address`, value.body?.escrow_address);
+  } catch (err) {
+    assert(false, `${def.label}: escrow_address readable`, (err as Error).message);
+  }
 }
 
 console.log("\n== Live checks");

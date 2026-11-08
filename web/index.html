@@ -18,90 +18,117 @@
       <strong>Informational only.</strong> Limits are set by Circle and can change at any time.
       Always do a small test transfer first. This page is read-only: your browser reads the chain directly, and nothing is ever signed or sent.
     </p>
+    <div class="tabs" role="tablist" aria-label="Page sections" id="tabs">
+      <button type="button" role="tab" id="tab-cctp" aria-controls="panel-cctp" aria-selected="true">CCTP V1</button>
+      <button type="button" role="tab" id="tab-escrow" aria-controls="panel-escrow" aria-selected="false" tabindex="-1">IBC escrow</button>
+    </div>
   </header>
 
   <main class="wrap">
-    <section aria-label="Route status" class="routes" id="routes"></section>
-    <p class="muted small" id="scheduled"></p>
+    <div class="panel" id="panel-cctp" role="tabpanel" aria-labelledby="tab-cctp">
+      <section aria-label="Route status" class="routes" id="routes"></section>
+      <p class="muted small" id="scheduled"></p>
 
-    <section aria-labelledby="countdown-h" class="card">
-      <h2 id="countdown-h">CCTP V1 retirement</h2>
-      <div class="countdowns" id="countdowns"></div>
-    </section>
+      <section aria-labelledby="countdown-h" class="card">
+        <h2 id="countdown-h">CCTP V1 retirement</h2>
+        <div class="countdowns" id="countdowns"></div>
+      </section>
 
-    <section aria-labelledby="calc-h" class="card">
-      <h2 id="calc-h">Transfer calculator</h2>
-      <p class="muted small">Exit Noble USDC into Circle-native USDC. Two exits are checked live: <strong>USDC.inj</strong> through the Osmosis allUSDC pool 3497 via Skip Go (preferred whenever the pool has enough USDC.inj for the whole amount), or <strong>Ethereum USDC</strong> through CCTP V1.</p>
-      <form id="calc-form" class="calc-form">
-        <label>Direction
-          <select id="calc-direction">
-            <option value="noble-eth">Exit Noble → USDC.inj or Ethereum</option>
-            <option value="eth-noble">Ethereum → Noble</option>
-          </select>
-        </label>
-        <label>Amount (USDC)
-          <input id="calc-amount" inputmode="decimal" autocomplete="off" value="1,000" />
-        </label>
-        <button type="submit">Calculate</button>
-      </form>
-      <div id="calc-result" aria-live="polite"></div>
-    </section>
+      <section aria-labelledby="calc-h" class="card">
+        <h2 id="calc-h">Transfer calculator</h2>
+        <p class="muted small">Exit Noble USDC into Circle-native USDC. Two exits are checked live: <strong>USDC.inj</strong> through the Osmosis allUSDC pool 3497 via Skip Go (preferred whenever the pool has enough USDC.inj for the whole amount), or <strong>Ethereum USDC</strong> through CCTP V1.</p>
+        <form id="calc-form" class="calc-form">
+          <label>Direction
+            <select id="calc-direction">
+              <option value="noble-eth">Exit Noble → USDC.inj or Ethereum</option>
+              <option value="eth-noble">Ethereum → Noble</option>
+            </select>
+          </label>
+          <label>Amount (USDC)
+            <input id="calc-amount" inputmode="decimal" autocomplete="off" value="1,000" />
+          </label>
+          <button type="submit">Calculate</button>
+        </form>
+        <div id="calc-result" aria-live="polite"></div>
+      </section>
 
-    <section aria-labelledby="burns-h" class="card">
-      <h2 id="burns-h">USDC burned on Noble per day</h2>
-      <p class="muted small" id="burns-meta"></p>
-      <div class="calc-summary" id="burns-stats"></div>
-      <figure class="chart-fig">
-        <figcaption>Daily burns by destination <span class="muted">(UTC days, CCTP V1 DepositForBurn)</span></figcaption>
-        <div class="legend" id="legend-burns"></div>
-        <div class="chart-box"><canvas id="chart-burns" aria-label="USDC burned on Noble per day" role="img"></canvas></div>
-      </figure>
-      <details class="table-view">
-        <summary>Show daily totals by destination</summary>
-        <div class="scroll"><table id="burns-table"></table></div>
-      </details>
-      <h3 class="subhead">Recent burns</h3>
-      <p class="muted small">Context only: burns still going through does not guarantee your transfer fits the current limits.</p>
-      <div class="scroll"><table id="activity"></table></div>
-      <nav class="pager" id="activity-pager" aria-label="Recent burns pages" hidden></nav>
-    </section>
+      <section aria-labelledby="burns-h" class="card">
+        <h2 id="burns-h">USDC burned on Noble per day</h2>
+        <p class="muted small" id="burns-meta"></p>
+        <div class="calc-summary" id="burns-stats"></div>
+        <figure class="chart-fig">
+          <figcaption>Daily burns by destination <span class="muted">(UTC days, CCTP V1 DepositForBurn)</span></figcaption>
+          <div class="legend" id="legend-burns"></div>
+          <div class="chart-box"><canvas id="chart-burns" aria-label="USDC burned on Noble per day" role="img"></canvas></div>
+        </figure>
+        <details class="table-view">
+          <summary>Show daily totals by destination</summary>
+          <div class="scroll"><table id="burns-table"></table></div>
+        </details>
+        <h3 class="subhead">Recent burns</h3>
+        <p class="muted small">Context only: burns still going through does not guarantee your transfer fits the current limits.</p>
+        <div class="scroll"><table id="activity"></table></div>
+        <nav class="pager" id="activity-pager" aria-label="Recent burns pages" hidden></nav>
+      </section>
 
-    <section aria-labelledby="hist-h" class="card">
-      <div class="section-head">
-        <h2 id="hist-h">Limit history</h2>
-        <div class="seg" role="group" aria-label="Time range" id="range">
-          <button type="button" data-hours="24">24h</button>
-          <button type="button" data-hours="72" aria-pressed="true">72h</button>
-          <button type="button" data-hours="168">7d</button>
-          <button type="button" data-hours="720">30d</button>
+      <section aria-labelledby="hist-h" class="card">
+        <div class="section-head">
+          <h2 id="hist-h">Limit history</h2>
+          <div class="seg" role="group" aria-label="Time range" id="range">
+            <button type="button" data-hours="24">24h</button>
+            <button type="button" data-hours="72" aria-pressed="true">72h</button>
+            <button type="button" data-hours="168">7d</button>
+            <button type="button" data-hours="720">30d</button>
+          </div>
         </div>
-      </div>
-      <p class="muted small" id="hist-meta"></p>
-      <div class="charts">
-        <figure class="chart-fig">
-          <figcaption>Per-message burn limit <span class="muted">(max per transaction)</span></figcaption>
-          <div class="legend" id="legend-limits"></div>
-          <div class="chart-box"><canvas id="chart-limits" aria-label="Per-message burn limit over time" role="img"></canvas></div>
-          <div class="changes" id="changes-limits"></div>
-        </figure>
-        <figure class="chart-fig">
-          <figcaption>Destination minter allowance <span class="muted">(shared cap, all users)</span></figcaption>
-          <div class="legend" id="legend-allow"></div>
-          <div class="chart-box"><canvas id="chart-allow" aria-label="Destination minter allowance over time" role="img"></canvas></div>
-          <div class="changes" id="changes-allow"></div>
-        </figure>
-      </div>
-      <details class="table-view">
-        <summary>Show history as a table</summary>
-        <div class="scroll"><table id="hist-table"></table></div>
-      </details>
-    </section>
+        <p class="muted small" id="hist-meta"></p>
+        <div class="charts">
+          <figure class="chart-fig">
+            <figcaption>Per-message burn limit <span class="muted">(max per transaction)</span></figcaption>
+            <div class="legend" id="legend-limits"></div>
+            <div class="chart-box"><canvas id="chart-limits" aria-label="Per-message burn limit over time" role="img"></canvas></div>
+            <div class="changes" id="changes-limits"></div>
+          </figure>
+          <figure class="chart-fig">
+            <figcaption>Destination minter allowance <span class="muted">(shared cap, all users)</span></figcaption>
+            <div class="legend" id="legend-allow"></div>
+            <div class="chart-box"><canvas id="chart-allow" aria-label="Destination minter allowance over time" role="img"></canvas></div>
+            <div class="changes" id="changes-allow"></div>
+          </figure>
+        </div>
+        <details class="table-view">
+          <summary>Show history as a table</summary>
+          <div class="scroll"><table id="hist-table"></table></div>
+        </details>
+      </section>
 
-    <section aria-labelledby="checks-h" class="card">
-      <h2 id="checks-h">All checks</h2>
-      <p class="muted small">Read live by your browser. Click a source to verify it yourself.</p>
-      <div class="scroll"><table class="checks" id="checks"></table></div>
-    </section>
+      <section aria-labelledby="checks-h" class="card">
+        <h2 id="checks-h">All checks</h2>
+        <p class="muted small">Read live by your browser. Click a source to verify it yourself.</p>
+        <div class="scroll"><table class="checks" id="checks"></table></div>
+      </section>
+    </div>
+
+    <div class="panel" id="panel-escrow" role="tabpanel" aria-labelledby="tab-escrow" hidden>
+      <section aria-labelledby="escrow-h" class="card">
+        <div class="section-head">
+          <h2 id="escrow-h">Noble USDC in IBC escrow</h2>
+          <button type="button" class="ghost" id="escrow-refresh">Refresh</button>
+        </div>
+        <p class="muted small">When Noble USDC is sent to another chain over IBC, Noble locks it in the escrow account of that channel.
+          Each balance below is how much Noble USDC currently sits on that chain. Channels are taken from the
+          <a href="https://github.com/cosmos/chain-registry/tree/master/_IBC" target="_blank" rel="noopener">Cosmos chain registry</a>
+          and, like their escrow addresses, never change; balances are read live from Noble by your browser.</p>
+        <p class="muted small" id="escrow-meta" aria-live="polite"></p>
+        <div class="calc-summary" id="escrow-stats"></div>
+        <div class="scroll"><table class="escrow" id="escrow-table"></table></div>
+        <p class="muted small" id="escrow-note"></p>
+        <details class="table-view">
+          <summary>Show daily snapshots</summary>
+          <div class="scroll"><table id="escrow-history"></table></div>
+        </details>
+      </section>
+    </div>
   </main>
 
   <footer class="wrap sources">
@@ -123,7 +150,11 @@
       <li>Published data (updated every ~15 min by a GitHub Action):
         <a id="link-latest" target="_blank" rel="noopener">latest.json</a> ·
         <a id="link-history" target="_blank" rel="noopener">history.json</a> ·
-        <a id="link-burns" target="_blank" rel="noopener">burns.json</a></li>
+        <a id="link-burns" target="_blank" rel="noopener">burns.json</a> ·
+        <a id="link-escrow" target="_blank" rel="noopener">escrow.json</a> (one IBC escrow reading per UTC day)</li>
+      <li>IBC channels: <a href="https://github.com/cosmos/chain-registry/tree/master/_IBC" target="_blank" rel="noopener">cosmos/chain-registry <code>_IBC</code></a>.
+        Escrow address = <code>sha256("ics20-1" ‖ 0x00 ‖ "transfer/&lt;channel&gt;")[:20]</code>, as in
+        <a href="https://github.com/cosmos/ibc-go/blob/main/modules/apps/transfer/types/keys.go" target="_blank" rel="noopener">ibc-go</a>.</li>
     </ul>
   </footer>
 

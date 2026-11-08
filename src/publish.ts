@@ -4,11 +4,13 @@
  *   latest.json   last full status snapshot (same shape as StatusSnapshot)
  *   history.json  compact snapshots for the last HISTORY_PUBLISH_DAYS (limits + route states)
  *   burns.json    daily USDC burned on Noble per destination + recent burns
+ *   escrow.json   one reading per UTC day of Noble USDC in the IBC escrow of each top chain
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BurnsFile } from "./burns";
 import type { AppConfig } from "./config";
+import type { EscrowFile } from "./escrow";
 import { TRACKED_LIMITS } from "./history";
 import type { SnapshotRecord, SnapshotStore } from "./storage";
 import type { StatusSnapshot } from "./types";
@@ -47,6 +49,7 @@ export async function publishData(
   store: SnapshotStore,
   burns: BurnsFile | null,
   now = new Date(),
+  escrow: EscrowFile | null = null,
 ) {
   await mkdir(cfg.dataDir, { recursive: true });
   const since = new Date(now.getTime() - cfg.historyPublishDays * 86400_000);
@@ -59,5 +62,6 @@ export async function publishData(
   await writeJson(join(cfg.dataDir, "latest.json"), status);
   await writeJson(join(cfg.dataDir, "history.json"), history);
   if (burns) await writeJson(join(cfg.dataDir, "burns.json"), burns);
+  if (escrow) await writeJson(join(cfg.dataDir, "escrow.json"), escrow);
   return { history_records: history.records.length };
 }
